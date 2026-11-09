@@ -40,7 +40,8 @@ enum MenuTab {
     TAB_GRAPHICS = 0,
     TAB_GAMEPLAY = 1,
     TAB_CONTROLS = 2,
-    TAB_COUNT = 3
+    TAB_DISPLAY = 3,   // (fork: ultrawide and the screen filters)
+    TAB_COUNT = 4
 };
 
 struct Row {
@@ -61,6 +62,14 @@ const char* tx_sens(int v) {
     static char b[12];
     snprintf(b, sizeof b, "%.2f", v / 100.0);
     return b;
+}
+const char* tx_wide_menus(int v) {   // (fork)
+    static const char* t[] = {"Full width", "Centred, blurred sides", "Centred, black bars"};
+    return t[std::min(std::max(v, 0), 2)];
+}
+const char* tx_filter(int v) {   // (fork)
+    static const char* t[] = {"Off", "CRT", "Scanlines", "Film"};
+    return t[std::min(std::max(v, 0), 3)];
 }
 const char* tx_upscale(int v) {
     static const char* t[] = {"Off", "Catmull-Rom", "Lanczos"};
@@ -233,8 +242,17 @@ Row rows[] = {
      "Sharpens the picture as it goes to the window, with or without an upscaling filter. Too much shows halos around edges."},
     {TAB_GRAPHICS, "Handheld profile", &opts.handheld, 0, 1, 1, tx_handheld,
      "Runs the game as if the console were undocked: lower resolutions, lighter on the GPU. Applies after a restart."},
-    {TAB_GRAPHICS, "Ultrawide", &opts.ultrawide, 0, 1, 1, tx_ultrawide,
-     "Monitor's shape widens the camera to fill a screen wider than 16:9. The HUD is still stretched. Applies after a restart."},
+    {TAB_DISPLAY, "Ultrawide", &opts.ultrawide, 0, 1, 1, tx_ultrawide,
+     "The picture takes the monitor's shape when it is wider than 16:9: more of the world at the sides, the HUD in the middle 16:9. "
+     "Applies after a restart (the game sizes its pictures once, at the start)."},
+    {TAB_DISPLAY, "Ultrawide menus", &opts.wide_menus, 0, 2, 1, tx_wide_menus,
+     "Ultrawide only: the pause and item menus at full width (stretched), or in the middle 16:9 with the sides blurred or black. "
+     "Changes at once."},
+    {TAB_DISPLAY, "Screen filter", &opts.filter, 0, 3, 1, tx_filter,
+     "A look for the whole picture: CRT (curved glass, scanlines and a shadow mask), Scanlines alone, or Film (warm grade, "
+     "grain and vignette). Changes at once."},
+    {TAB_DISPLAY, "Filter strength", &opts.filter_strength, 0, 100, 10, tx_percent,
+     "How strong the screen filter is."},
     {TAB_GRAPHICS, "Robust buffers", &opts.robust, 0, 2, 1, tx_robust,
      "Bounds-checked buffer reads: a read past a buffer's end is dropped instead of stopping the GPU. Auto is on, on every card; "
      "Off can be faster on some NVIDIA cards. Applies after restart."},
@@ -370,7 +388,7 @@ const char* help_of(const Row& r) {
 constexpr int kMenuWidth = menu_hit::kWidth;   // (at a scale of 1: 720 lines)
 
 int cur_tab = TAB_GRAPHICS;
-int tab_selected[TAB_COUNT] = {0, 0, 0};
+int tab_selected[TAB_COUNT] = {0, 0, 0, 0};
 
 int tab_row_count(int t) {
     int c = 0;
@@ -413,7 +431,7 @@ bool mouse_read = false;   // (the menu has read the mouse since it opened)
 // (the Cheats page's and the list pages' record of each shown row's or line's value's left edge: the menu's width, none)
 int cheat_value_l[kCheatRows];
 int list_value_l[kTeleportLines];
-bool is_slider(const Row& r) { return r.value == &opts.sharpness || r.value == &opts.mouse_sens; }
+bool is_slider(const Row& r) { return r.value == &opts.sharpness || r.value == &opts.mouse_sens || r.value == &opts.filter_strength; }
 std::string ini_path() {
     char exe[MAX_PATH];
     const DWORD n = game_module_path(exe, MAX_PATH);
@@ -900,16 +918,16 @@ void paint_menu(HDC dc, uint32_t w, uint32_t h, int s) {
     fill(dc, 0, tab_y, (int)w, tab_h, RGB(22, 28, 25));
     HFONT small_font = font(12 * s, FW_SEMIBOLD);
     SelectObject(dc, small_font);
-    SetTextColor(dc, hover_tab == 3 ? RGB(210, 225, 215) : RGB(110, 135, 120));   // (lighter under the cursor: a click goes there)
+    SetTextColor(dc, hover_tab == 103 ? RGB(210, 225, 215) : RGB(110, 135, 120));   // (lighter under the cursor: a click goes there)
     TextOutA(dc, 16 * s, tab_y + 8 * s, "[Q / LB]", 8);
     const char* rb_hint = "[E / RB]";
     SIZE rbsz{};
     GetTextExtentPoint32A(dc, rb_hint, (int)strlen(rb_hint), &rbsz);
-    SetTextColor(dc, hover_tab == 4 ? RGB(210, 225, 215) : RGB(110, 135, 120));
+    SetTextColor(dc, hover_tab == 104 ? RGB(210, 225, 215) : RGB(110, 135, 120));
     TextOutA(dc, (int)w - 16 * s - rbsz.cx, tab_y + 8 * s, rb_hint, (int)strlen(rb_hint));
     HFONT tab_font = font(13 * s, FW_BOLD);
     SelectObject(dc, tab_font);
-    const char* const tab_titles[TAB_COUNT] = {"GRAPHICS", "GAMEPLAY", "CONTROLS"};
+    const char* const tab_titles[TAB_COUNT] = {"GRAPHICS", "GAMEPLAY", "CONTROLS", "DISPLAY"};
     const int center_start = menu_hit::kTabSide * s;
     const int tab_slot_w = menu_hit::tab_slot_w(s, (int)w);
     for (int t = 0; t < TAB_COUNT; t++) {
@@ -1615,8 +1633,8 @@ void menu_tick() {
         if (mouse) {   // (the mouse: see the top of this file)
             const int count = tab_row_count(cur_tab);
             const menu_hit::Hit hit = menu_hit::options(mx, my, scale, mw, mh, TAB_COUNT, count, row_value_l, row_slider);
-            const int ht = hit.part == menu_hit::kTab ? hit.index : hit.part == menu_hit::kTabPrev ? 3
-                         : hit.part == menu_hit::kTabNext ? 4 : -1;
+            const int ht = hit.part == menu_hit::kTab ? hit.index : hit.part == menu_hit::kTabPrev ? 103
+                         : hit.part == menu_hit::kTabNext ? 104 : -1;   // (fork: past the tab indices)
             if (ht != hover_tab) hover_tab = ht, changed = true;
             int& sel = tab_selected[cur_tab];
             const bool on_row = hit.part == menu_hit::kRow || hit.part == menu_hit::kSlider;

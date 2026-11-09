@@ -5,7 +5,7 @@
 namespace mkwvk::menu_hit {
 
 // ---- the options page, at a scale of 1 (the window 720 pixels high; 1440 and up: 2, and so on) ----
-constexpr int kWidth = 480;
+constexpr int kWidth = 560;   // (fork: room for a fourth tab)
 constexpr int kTabY = 44, kTabH = 32;     // the tab strip
 constexpr int kTabSide = 85;              // either side of the tab titles: [Q / LB] and [E / RB], the previous and next tab
 constexpr int kRowGap = 8, kRowH = 28;    // the rows, from kTabY + kTabH + kRowGap
@@ -52,7 +52,7 @@ inline void origin(int img_w, int img_h, int menu_w, int menu_h, int* x0, int* y
     *y0 = (img_h - menu_h) / 2;
 }
 inline int rows_top(int s) { return (kTabY + kTabH + kRowGap) * s; }
-inline int tab_slot_w(int s, int w) { return (w - 2 * kTabSide * s) / 3; }
+inline int tab_slot_w(int s, int w) { return (w - 2 * kTabSide * s) / 4; }   // (fork: four tabs)
 /// A slider's value for a point along its track (lo to hi in steps of step), nearest step, held to its ends
 inline int slider_value(int permille, int lo, int hi, int step) {
     if (step <= 0 || hi <= lo) return lo;

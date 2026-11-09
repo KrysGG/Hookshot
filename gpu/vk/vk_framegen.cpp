@@ -9,6 +9,7 @@
 // then the game's, evenly over the game's recent frame time, about one frame behind the game. Loading hitches
 // (frames over 100 ms apart) are not interpolated.
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -158,7 +159,7 @@ bool init_scale() {
     scale.init = scale.failed = true;
     if (!dev.push_descriptor || !vkCmdPushDescriptorSetKHR) return false;
     const VkDescriptorType S = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, I = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    if (make_pipe(scale.pipe, FG_SCALE_COMP_SPV, sizeof FG_SCALE_COMP_SPV, {S, I}, 8)) {
+    if (make_pipe(scale.pipe, FG_SCALE_COMP_SPV, sizeof FG_SCALE_COMP_SPV, {S, I}, 32)) {
         VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.maxLod = 0.25f;
@@ -365,8 +366,32 @@ bool framegen_on() {
     return framegen_wanted(opts.framegen, allow) && !dev.offscreen && !fg.failed;
 }
 
+// (fork) what the present pass adds after the scale: ultrawide's menus with their sides blurred or black, and the screen filter
+struct PresentFx { int fx; float strength; float x0, x1; int side; float time; };
+PresentFx present_fx() {
+    PresentFx f{opts.filter, opts.filter_strength / 100.0f, 0.0f, 0.0f, 0, 0.0f};
+    static uint32_t frame = 0;
+    f.time = (float)(++frame % 4096) / 4096.0f;
+    if (host && host->wide_menu) {
+        // (nx2/oot_wide.py KEEP_VTABLES: the bits that are menus; the others are fades, which keep the whole picture.
+        // RX_WIDE_MENU_BITS=<hex> over it)
+        // (bit 2 is the fades, set up on their own as a save loads: they keep covering the whole picture)
+        static const uint32_t menus = getenv("RX_WIDE_MENU_BITS") ? (uint32_t)strtoul(getenv("RX_WIDE_MENU_BITS"), nullptr, 16) : 0xbu;
+        float margin = 0.0f;
+        host->wide_menu(opts.wide_menus ? (int)(0xfu & ~menus) : 0xf, &margin);
+        // (a menu's layout is set up once, when it opens: what tells a menu is that the frame draws no world, as a pause, the map,
+        // a loading screen or a movie does not; 3 presents' grace for a frame the world skips)
+        extern std::atomic<int64_t> world_drawn_at;
+        extern int64_t presents_now;
+        const bool no_world = presents_now - world_drawn_at.load(std::memory_order_relaxed) > 3;
+        if (opts.wide_menus && margin > 0.0f && no_world) f.side = opts.wide_menus, f.x0 = margin, f.x1 = 1.0f - margin;
+    }
+    return f;
+}
+
 VkImage framegen_scale(VkCommandBuffer cmd, VkImageView src, VkImage image, uint32_t sw, uint32_t sh, const int crop[4], uint32_t dw, uint32_t dh) {
-    if (!opts.upscale && !opts.sharpness) return VK_NULL_HANDLE;
+    const PresentFx fx = present_fx();   // (every present: it also hands the menus' setting to the game's side)
+    if (!opts.upscale && !opts.sharpness && !fx.fx && !fx.side) return VK_NULL_HANDLE;
     if (!src || !image || !sw || !sh || !dw || !dh) return VK_NULL_HANDLE;
     if (crop && crop[2] > 0 && crop[3] > 0 &&
         (crop[0] < 0 || crop[1] < 0 || (uint32_t)crop[0] >= sw || (uint32_t)crop[1] >= sh)) return VK_NULL_HANDLE;
@@ -412,7 +437,8 @@ VkImage framegen_scale(VkCommandBuffer cmd, VkImageView src, VkImage image, uint
         scale.scaled_w = dw, scale.scaled_h = dh;
         to_general(cmd, scale.scaled.image);
     }
-    const struct { int mode; float sharp; } pc{opts.upscale, opts.sharpness / 100.0f};
+    const struct { int mode; float sharp; int fx; float strength; float x0, x1; int side; float time; } pc{
+        opts.upscale, opts.sharpness / 100.0f, fx.fx, fx.strength, fx.x0, fx.x1, fx.side, fx.time};
     pass(cmd, scale.pipe, {{src, scale.linear}, {scale.scaled.view, VK_NULL_HANDLE}}, dw, dh, &pc, sizeof pc);
     static const bool report = getenv("RX_VK_UPSCALE_LOG") != nullptr;
     static bool reported = false;

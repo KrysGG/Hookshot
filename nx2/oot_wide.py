@@ -34,12 +34,17 @@ def _size(name):
             % (name, name, name))
 
 
+# (fork) which of KEEP_VTABLES draws: bit k in hos_wide_menu_seen (the renderer reads and clears it each present, and blurs or
+# blacks the sides while a menu shows); such a screen keeps the whole picture only while its bit is in hos_wide_keep_mask
 HUD = ("{ extern volatile float hos_wide_squeeze; const float _q = hos_wide_squeeze; if (_q > 0.0f) { float _m00, _m11; "
        "memcpy(&_m00, c->vreg[1], 4); memcpy(&_m11, (const uint8_t *)c->vreg[4] + 4, 4); "
        "if (_m00 == %s && _m11 == %s) { const uint64_t _vt = recomp_load64(c, c->x[0] - 0x1b8); "
-       "if (%s) { float _row[4]; memcpy(_row, c->vreg[1], 16); for (int _k = 0; _k < 4; _k++) _row[_k] *= _q; "
+       "extern volatile uint32_t hos_wide_keep_mask, hos_wide_menu_seen, hos_wide_menu_last, hos_wide_setups[5]; const uint32_t _kb = %s; "
+       "if (_kb) __atomic_fetch_or(&hos_wide_menu_seen, _kb, __ATOMIC_RELAXED); hos_wide_menu_last = _kb; "
+       "__atomic_fetch_add(&hos_wide_setups[_kb ? __builtin_ctz(_kb) : 4], 1u, __ATOMIC_RELAXED); "
+       "if (!(_kb & hos_wide_keep_mask)) { float _row[4]; memcpy(_row, c->vreg[1], 16); for (int _k = 0; _k < 4; _k++) _row[_k] *= _q; "
        "memcpy(c->vreg[1], _row, 16); } } } }   /* (nx2/oot_wide.py: HUD in the middle 16:9) */"
-       % (UI_M00, UI_M11, " && ".join("_vt != 0x%xULL" % v for v in KEEP_VTABLES)))
+       % (UI_M00, UI_M11, " : ".join("_vt == 0x%xULL ? %du" % (v, 1 << k) for k, v in enumerate(KEEP_VTABLES)) + " : 0u"))
 
 MOVIE = ("{ extern volatile float hos_wide_margin; const float _m = hos_wide_margin; if (_m > 0.0f) { "
          "const uint64_t _vp = c->x[29] - 40; uint32_t _ua = (uint32_t)recomp_load32(c, _vp + 8), _ub = (uint32_t)recomp_load32(c, _vp + 16); "

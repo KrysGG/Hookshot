@@ -99,6 +99,9 @@ typedef struct MkwVkHost {
        window and the window has the focus. The Insert menu releases the mouse while it is open: WM_APP + 8 to the
        window, wParam 1 open, 0 closed (the capture it had then comes back) */
     int (*pointer)(MkwVkPointer *out);
+    /* (fork) ultrawide's menus (nx2/oot_wide.py): keep_mask >= 0 sets which keep-list screens keep the whole picture (ignored under
+       HOS_WIDE_KEEP); returns those drawn since the last call (and clears them), with the side margin of the middle 16:9 (0: not wide) */
+    uint32_t (*wide_menu)(int keep_mask, float *margin);
 } MkwVkHost;
 
 /* what the back end gives the executable: the rx_* functions (gpu/render/rx_nvn.h, rx_core) */

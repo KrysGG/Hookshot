@@ -134,6 +134,27 @@ static uint64_t host_guest_alloc(uint64_t size) {
 void hos_watch_guest_writes(const uint8_t *data, uint64_t size);   /* nvn_native.c */
 static void host_watch_guest_writes(uint64_t guest, uint64_t size) { hos_watch_guest_writes(hos_guest_base() + guest, size); }
 static float host_aspect_ratio(void) { return hos_aspect_ratio; }
+static uint32_t host_wide_menu(int keep_mask, float *margin) {   /* (fork: MkwVkHost.wide_menu) */
+    extern volatile uint32_t hos_wide_menu_seen, hos_wide_keep_mask, hos_wide_menu_last, hos_wide_setups[5];
+    extern volatile float hos_wide_margin;
+    static int forced = -1;
+    if (forced < 0) {
+        const char *e = getenv("HOS_WIDE_KEEP");
+        forced = e ? 1 : 0;
+        if (e) hos_wide_keep_mask = (uint32_t)strtoul(e, NULL, 16);
+    }
+    if (keep_mask >= 0 && !forced) hos_wide_keep_mask = (uint32_t)keep_mask;
+    if (margin) *margin = hos_wide_margin;
+    static unsigned calls;
+    static uint32_t told[5];
+    if (getenv("HOS_WIDE_LOG") && !(++calls % 120) && memcmp(told, (const void *)hos_wide_setups, sizeof told)) {   /* (fork, diagnosis) */
+        memcpy(told, (const void *)hos_wide_setups, sizeof told);
+        hos_log("wide: canvas setups: keep-list %u %u %u %u, others %u; last %#x", told[0], told[1], told[2], told[3], told[4],
+                hos_wide_menu_last);
+    }
+    /* (the screens drawn since the last call, and the last canvas set up: a menu's is set up when it opens, not every frame) */
+    return __atomic_exchange_n(&hos_wide_menu_seen, 0, __ATOMIC_RELAXED) | hos_wide_menu_last;
+}
 int hos_mouse_pointer(MkwVkPointer *out);   /* display.c, posix/display_sdl.c */
 
 #ifdef _WIN32
@@ -156,7 +177,7 @@ static const MkwVkHost vk_host = {
     nvn_tex_level_offset, nvn_fmt_bpb, nvn_tex_level_tiles, nvn_tex_linear_stride, nvn_depth_minus_w, hos_gpu_pools,
     hos_gpu_maps_generation, nvn_vmap_generation, hos_reserved_cpus, host_collect_in, host_guest_alloc,
     host_watch_guest_writes, hos_pad_raw, hos_binding, hos_bind, host_aspect_ratio, host_take_key_press,
-    hos_mouse_pointer,
+    hos_mouse_pointer, host_wide_menu,
 };
 
 static const MkwVkRenderer *vk;   /* the Vulkan back end, when it was chosen and started */

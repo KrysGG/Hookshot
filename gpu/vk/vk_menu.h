@@ -34,6 +34,9 @@ struct Options {
     int dlss = 0;         // the game's gameplay upscale through NVIDIA DLSS (vk_dlss.cpp); read once, at the start (RX_DLSS=0/1 over it)
     int dlss_mode = 3;    // the render size with DLSS on: 0 Ultra Performance .. 3 Quality, 4 DLAA (dlss_render_size)
     int dlss_preset = 3;  // DLSS's model: 0 J, 1 K, 2 L, 3 M; applies at once (RX_DLSS_PRESET=J..M over it)
+    int wide_menus = 1;   // (fork) ultrawide: the pause and item menus 0 full width (stretched), 1 centred with the sides blurred, 2 centred with black bars
+    int filter = 0;       // (fork) the screen filter at the present: 0 off, 1 CRT, 2 scanlines, 3 film (vk_framegen.cpp, shaders/fg_scale.comp)
+    int filter_strength = 60;   // (fork) the filter's strength in percent
 };
 extern Options opts;
 /// (vk_memory.cpp) true when the quality preset's memory budgets (vram_mb, mirror_mb) are to be used: the card has no more

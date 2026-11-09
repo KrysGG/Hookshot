@@ -1158,6 +1158,9 @@ volatile uint64_t hos_wide_out, hos_wide_scene;
 volatile int hos_native_scene;
 volatile int hos_fix_res;   /* (nx2/oot_native_resolution.py's cached-scale refresh: HOS_FIX_RES=1; #849's fixed-scale patch does it by default) */
 volatile float hos_wide_ratio, hos_wide_squeeze, hos_wide_margin;
+/* (fork, nx2/oot_wide.py HUD) the keep-list screens drawn since the renderer last looked (a bit each), and those that keep the
+   whole picture (the rest are put in the middle 16:9 like the HUD). HOS_WIDE_KEEP=<hex mask> over the renderer's setting */
+volatile uint32_t hos_wide_menu_seen, hos_wide_keep_mask = 0xf, hos_wide_menu_last, hos_wide_setups[5];   /* (last: the last canvas set up's bit, 0 another's) */
 /* (nx2/oot_occlusion.py) read by the game's code where it decides to make occlusion queries: 1, none (HOOKSHOT_OCCLUSION_OFF=1) */
 volatile int hos_occlusion_off;
 static void occlusion_switch(void) {
