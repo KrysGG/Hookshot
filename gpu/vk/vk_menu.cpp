@@ -49,7 +49,8 @@ enum MenuTab {
     TAB_GRAPHICS = 0,
     TAB_GAMEPLAY = 1,
     TAB_CONTROLS = 2,
-    TAB_COUNT = 3
+    TAB_MODS = 3,   // (Cheats/Mods: the free camera, no-clip flight, the screen filters)
+    TAB_COUNT = 4
 };
 
 struct Row {
@@ -426,6 +427,12 @@ const char* hn_sharpness(int v, int variant) {
 }
 MENU_HINTS(hn_handheld, 0, "Docked: the Output resolution's size.", "Lower resolutions, lighter on the GPU.")
 MENU_HINTS(hn_ultrawide, 0, "The game's own shape.", "The camera takes the screen's shape, wider or narrower. The HUD keeps its 16:9 shape in the middle.")
+const char* tx_screen_filter(int v) {
+    static const char* t[] = {"Off", "CRT", "Scanlines", "Film"};
+    return t[std::min(std::max(v, 0), 3)];
+}
+// (the Cheats/Mods tab's live toggles: not saved, a mirror of free_camera and player_flight, which the Cheats page sets too)
+int mod_free_camera = 0, mod_flight = 0;
 const char* tx_wide_menus(int v) {
     static const char* t[] = {"Full width", "Centred, blurred sides", "Centred, black bars"};
     return t[std::min(std::max(v, 0), 2)];
@@ -538,6 +545,14 @@ Row rows[] = {
      "Which face button is which. Binding one yourself on the Controls page makes it Custom.", hn_pad_layout},
     {TAB_CONTROLS, "Controls", nullptr, 0, 0, 0, nullptr,   // (hookshot: opens its page)
      "Which gamepad button and which keys press each of the Switch's buttons."},
+    {TAB_MODS, "Free camera", &mod_free_camera, 0, 1, 1, tx_onoff,
+     "Fly the camera with your usual controls; Page Up / Page Down or R / L change its height. The HUD is hidden meanwhile.", nullptr, false, true},
+    {TAB_MODS, "No-clip flight", &mod_flight, 0, 1, 1, tx_onoff,
+     "Double-tap Jump to take off and land. Hold Jump to climb or L to descend, through walls.", nullptr, false, true},
+    {TAB_MODS, "Screen filter", &opts.filter, 0, 3, 1, tx_screen_filter,
+     "A look for the whole picture: CRT (curved glass, scanlines and a shadow mask), Scanlines alone, or Film (warm grade, "
+     "grain and vignette). Changes at once.", nullptr, false, true},
+    {TAB_MODS, "Filter strength", &opts.filter_strength, 0, 100, 10, tx_percent, "How strong the screen filter is.", nullptr, false, true},
     // (Quit and Cheats stay the table's last two rows: kQuitRow and kCheatsRow count back from its end)
     {TAB_GAMEPLAY, "Quit", nullptr, 0, 0, 0, nullptr,
      "Save your progress first. Press Enter or the bottom face button twice to quit. Esc or the right face button cancels."},
@@ -635,7 +650,7 @@ constexpr int kRows = sizeof rows / sizeof rows[0];
 constexpr int kMenuWidth = menu_hit::kWidth;   // (at a scale of 1: 720 lines)
 
 int cur_tab = TAB_GRAPHICS;
-int tab_selected[TAB_COUNT] = {0, 0, 0};
+int tab_selected[TAB_COUNT] = {};
 
 // ---- the rows that take a restart: their values at the start (menu_init, the GPU's at menu_set_gpu_count) ----
 namespace mr = menu_restart;
@@ -736,7 +751,8 @@ bool mouse_read = false;   // (the menu has read the mouse since it opened)
 // (the Cheats page's and the list pages' record of each shown row's or line's value's left edge: the menu's width, none)
 int cheat_value_l[kCheatRows];
 int list_value_l[kTeleportLines];
-bool is_slider(const Row& r) { return r.value == &opts.sharpness || r.value == &opts.mouse_sens || r.value == &opts.gyro_sens_x || r.value == &opts.gyro_sens_y; }
+bool is_slider(const Row& r) { return r.value == &opts.sharpness || r.value == &opts.mouse_sens || r.value == &opts.gyro_sens_x || r.value == &opts.gyro_sens_y ||
+                                  r.value == &opts.filter_strength; }
 /// (a scale: the arrows, a click and the wheel stop at its ends; Rumble strength would go from Off to its strongest)
 bool stops_at_ends(const Row& r) { return r.value == &opts.mouse_sens || r.value == &opts.rumble || r.value == &opts.gyro_sens_x || r.value == &opts.gyro_sens_y; }
 /// (the ini's Rumble strength on the menu's steps: 0 to 150, the nearest 25)
@@ -855,7 +871,7 @@ void save() {
     }
     if (FILE* f = fopen(ini_path().c_str(), "w")) {
         for (const Row& r : rows)
-            if (r.value) fprintf(f, "%s=%d\n", ini_key(r), *r.value);
+            if (r.value && r.value != &mod_free_camera && r.value != &mod_flight) fprintf(f, "%s=%d\n", ini_key(r), *r.value);
         if (!mic_want.empty()) fprintf(f, "microphone_device=%s\n", mic_want.c_str());   // (hookshot: also while it is unplugged)
         // (2: game_speed below 2 was only ever the old default, see menu_init; 3: the mouse's buttons are bindings, see
         // host/nn_hid.c binds_load)
@@ -901,6 +917,8 @@ void set_row(Row& r, int v, int dir, bool keep = true) {
         }
     }
     if (r.value == &opts.mic && can_mic()) mic_chosen();   // (hookshot)
+    if (r.value == &mod_free_camera) free_camera.store(mod_free_camera);   // (the Cheats/Mods tab: live, not saved)
+    if (r.value == &mod_flight) player_flight.store(mod_flight ? 0 : -1);
     {   // (a row that takes a restart, or a preset that sets one: asked again at the next close)
         int now[mr::kMax];
         restart_values(now);
@@ -1120,6 +1138,7 @@ void fill(HDC dc, int x, int y, int w, int h, COLORREF c) {
     DeleteObject(b);
 }
 void paint_menu(HDC dc, uint32_t w, uint32_t h, int s) {
+    mod_free_camera = free_camera.load(), mod_flight = player_flight.load() >= 0;   // (the Cheats page may have set them)
     fill(dc, 0, 0, (int)w, (int)h, RGB(16, 20, 18));
     fill(dc, 0, 0, (int)w, 2 * s, RGB(96, 176, 112));
     SetBkMode(dc, TRANSPARENT);
@@ -1327,18 +1346,18 @@ void paint_menu(HDC dc, uint32_t w, uint32_t h, int s) {
     fill(dc, 0, tab_y, (int)w, tab_h, RGB(22, 28, 25));
     HFONT small_font = font(12 * s, FW_SEMIBOLD);
     SelectObject(dc, small_font);
-    SetTextColor(dc, hover_tab == 3 ? RGB(210, 225, 215) : RGB(110, 135, 120));   // (lighter under the cursor: a click goes there)
+    SetTextColor(dc, hover_tab == 103 ? RGB(210, 225, 215) : RGB(110, 135, 120));   // (lighter under the cursor: a click goes there)
     TextOutA(dc, 16 * s, tab_y + 8 * s, "[Q / LB]", 8);
     const char* rb_hint = "[E / RB]";
     SIZE rbsz{};
     GetTextExtentPoint32A(dc, rb_hint, (int)strlen(rb_hint), &rbsz);
-    SetTextColor(dc, hover_tab == 4 ? RGB(210, 225, 215) : RGB(110, 135, 120));
+    SetTextColor(dc, hover_tab == 104 ? RGB(210, 225, 215) : RGB(110, 135, 120));
     TextOutA(dc, (int)w - 16 * s - rbsz.cx, tab_y + 8 * s, rb_hint, (int)strlen(rb_hint));
     HFONT tab_font = font(13 * s, FW_BOLD);
     SelectObject(dc, tab_font);
-    const char* const tab_titles[TAB_COUNT] = {"GRAPHICS", "GAMEPLAY", "CONTROLS"};
+    const char* const tab_titles[TAB_COUNT] = {"GRAPHICS", "GAMEPLAY", "CONTROLS", "CHEATS/MODS"};
     const int center_start = menu_hit::kTabSide * s;
-    const int tab_slot_w = menu_hit::tab_slot_w(s, (int)w);
+    const int tab_slot_w = menu_hit::tab_slot_w(s, (int)w, TAB_COUNT);
     for (int t = 0; t < TAB_COUNT; t++) {
         const bool active = (t == cur_tab);
         int slot_x = center_start + t * tab_slot_w;
@@ -1701,7 +1720,7 @@ void menu_set_gpu_count(int count) {
 
 bool menu_is_open() { return open_now.load(std::memory_order_relaxed); }
 int menu_heart_protection() { return protect_hearts.load(std::memory_order_relaxed); }
-int menu_player_flight() { return cheats_enabled ? player_flight.load(std::memory_order_relaxed) : -1; }
+int menu_player_flight() { return player_flight.load(std::memory_order_relaxed); }   // (-1 unless turned on: Cheats page or Cheats/Mods tab)
 int menu_free_camera() { return free_camera.load(std::memory_order_relaxed); }
 int menu_take_cheat_action() { return cheat_action.exchange(0, std::memory_order_relaxed); }
 
@@ -2136,8 +2155,8 @@ void menu_tick() {
         if (mouse) {   // (the mouse: see the top of this file)
             const int count = tab_row_count(cur_tab);
             const menu_hit::Hit hit = menu_hit::options(mx, my, scale, mw, mh, TAB_COUNT, count, row_value_l, row_slider);
-            const int ht = hit.part == menu_hit::kTab ? hit.index : hit.part == menu_hit::kTabPrev ? 3
-                         : hit.part == menu_hit::kTabNext ? 4 : -1;
+            const int ht = hit.part == menu_hit::kTab ? hit.index : hit.part == menu_hit::kTabPrev ? 103
+                         : hit.part == menu_hit::kTabNext ? 104 : -1;   // (past the tabs' own indices)
             if (ht != hover_tab) hover_tab = ht, changed = true;
             int& sel = tab_selected[cur_tab];
             const bool on_row = hit.part == menu_hit::kRow || hit.part == menu_hit::kSlider;

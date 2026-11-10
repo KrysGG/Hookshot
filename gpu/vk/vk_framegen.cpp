@@ -159,7 +159,7 @@ bool init_scale() {
     scale.init = scale.failed = true;
     if (!dev.push_descriptor || !vkCmdPushDescriptorSetKHR) return false;
     const VkDescriptorType S = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, I = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    if (make_pipe(scale.pipe, FG_SCALE_COMP_SPV, sizeof FG_SCALE_COMP_SPV, {S, I}, 20)) {
+    if (make_pipe(scale.pipe, FG_SCALE_COMP_SPV, sizeof FG_SCALE_COMP_SPV, {S, I}, 32)) {
         VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.maxLod = 0.25f;
@@ -387,7 +387,7 @@ WideSides wide_now;   // (wide_sides_tick's, each present)
 
 VkImage framegen_scale(VkCommandBuffer cmd, VkImageView src, VkImage image, uint32_t sw, uint32_t sh, const int crop[4], uint32_t dw, uint32_t dh) {
     const WideSides wide = wide_now;   // (wide_sides_tick, each present)
-    if (!opts.upscale && !opts.sharpness && !wide.side) return VK_NULL_HANDLE;
+    if (!opts.upscale && !opts.sharpness && !wide.side && !opts.filter) return VK_NULL_HANDLE;
     if (!src || !image || !sw || !sh || !dw || !dh) return VK_NULL_HANDLE;
     if (crop && crop[2] > 0 && crop[3] > 0 &&
         (crop[0] < 0 || crop[1] < 0 || (uint32_t)crop[0] >= sw || (uint32_t)crop[1] >= sh)) return VK_NULL_HANDLE;
@@ -433,7 +433,10 @@ VkImage framegen_scale(VkCommandBuffer cmd, VkImageView src, VkImage image, uint
         scale.scaled_w = dw, scale.scaled_h = dh;
         to_general(cmd, scale.scaled.image);
     }
-    const struct { int mode; float sharp; float x0, x1; int side; } pc{opts.upscale, opts.sharpness / 100.0f, wide.x0, wide.x1, wide.side};
+    extern int64_t presents_now;   // (the film grain's clock: a 60th of a second a present)
+    const struct { int mode; float sharp; float x0, x1; int side; int fx; float strength; float time; } pc{
+        opts.upscale, opts.sharpness / 100.0f, wide.x0, wide.x1, wide.side, opts.filter, opts.filter_strength / 100.0f,
+        (float)(presents_now % 36000) / 60.0f};
     pass(cmd, scale.pipe, {{src, scale.linear}, {scale.scaled.view, VK_NULL_HANDLE}}, dw, dh, &pc, sizeof pc);
     static const bool report = getenv("RX_VK_UPSCALE_LOG") != nullptr;
     static bool reported = false;
