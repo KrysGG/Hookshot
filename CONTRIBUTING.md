@@ -53,7 +53,8 @@ break. Claim in Discord #dev-work before you start.
 
 You need your own supported dump: program `0400486024DEC000`, update v131072, build `e0f3ccfa`. Other versions do
 not work, and the build reads the dump where it lies without changing it. Builds need about 60 GB free and a run uses
-about 10 GB of RAM.
+about 10 GB of RAM. Build on an SSD if you can: a hard drive works, but takes much longer, and the builder warns you
+before it starts.
 
 ### Windows, from the command line
 
@@ -137,6 +138,11 @@ The Windows app's **Build workers** choice applies to builds started from that w
 `HOOKSHOT_JOBS` override, or the build tools' free-memory policy when no override is set. A number overrides it for that
 build's child process only; more workers need more memory and are not always faster. This choice is not saved: a new
 window, including one started to update a game, uses Automatic again.
+
+Its **Build memory** choice is saved with the build's other settings, and the updates use it too, as they show no menu.
+**Automatic** keeps the free-memory policy. A number of GB sets
+`HOOKSHOT_MEM_LIMIT_GB` for that build: the compilers may then reserve that much together, whatever is free now. The
+compilers that always run (up to 4 on Windows) still run under a smaller number.
 
 ## Building
 
