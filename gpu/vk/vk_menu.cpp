@@ -437,8 +437,8 @@ const char* tx_screen_filter(int v) {
     static const char* t[] = {"Off", "CRT", "Scanlines", "Film"};
     return t[std::min(std::max(v, 0), 3)];
 }
-// (the Cheats/Mods tab's live toggles: not saved, a mirror of free_camera and player_flight, which the Cheats page sets too)
-int mod_free_camera = 0, mod_flight = 0;
+// (the Cheats/Mods tab's free camera: live, not saved, a mirror of free_camera, which the Cheats page sets too)
+int mod_free_camera = 0;
 const char* tx_wide_menus(int v) {
     static const char* t[] = {"Full width", "Centred, blurred sides", "Centred, black bars"};
     return t[std::min(std::max(v, 0), 2)];
@@ -557,8 +557,6 @@ Row rows[] = {
      "Which gamepad button and which keys press each of the Switch's buttons."},
     {TAB_MODS, "Free camera", &mod_free_camera, 0, 1, 1, tx_onoff,
      "Fly the camera with your usual controls; Page Up / Page Down or R / L change its height. The HUD is hidden meanwhile.", nullptr, false, true},
-    {TAB_MODS, "No-clip flight", &mod_flight, 0, 1, 1, tx_onoff,
-     "Double-tap Jump to take off and land. Hold Jump to climb or L to descend, through walls.", nullptr, false, true},
     {TAB_MODS, "Screen filter", &opts.filter, 0, 3, 1, tx_screen_filter,
      "A look for the whole picture: CRT (curved glass, scanlines and a shadow mask), Scanlines alone, or Film (warm grade, "
      "grain and vignette). Changes at once.", nullptr, false, true},
@@ -885,7 +883,7 @@ void save() {
     }
     if (FILE* f = fopen(ini_path().c_str(), "w")) {
         for (const Row& r : rows)
-            if (r.value && r.value != &mod_free_camera && r.value != &mod_flight) fprintf(f, "%s=%d\n", ini_key(r), *r.value);
+            if (r.value && r.value != &mod_free_camera) fprintf(f, "%s=%d\n", ini_key(r), *r.value);
         if (!mic_want.empty()) fprintf(f, "microphone_device=%s\n", mic_want.c_str());   // (hookshot: also while it is unplugged)
         // (2: game_speed below 2 was only ever the old default, see menu_init; 3: the mouse's buttons are bindings, see
         // host/nn_hid.c binds_load)
@@ -931,7 +929,6 @@ void set_row(Row& r, int v, int dir, bool keep = true) {
     }
     if (r.value == &opts.mic && can_mic()) mic_chosen();   // (hookshot)
     if (r.value == &mod_free_camera) free_camera.store(mod_free_camera);   // (the Cheats/Mods tab: live, not saved)
-    if (r.value == &mod_flight) player_flight.store(mod_flight ? 0 : -1);
     {   // (a row that takes a restart, or a preset that sets one: asked again at the next close)
         int now[mr::kMax];
         restart_values(now);
@@ -1151,7 +1148,7 @@ void fill(HDC dc, int x, int y, int w, int h, COLORREF c) {
     DeleteObject(b);
 }
 void paint_menu(HDC dc, uint32_t w, uint32_t h, int s) {
-    mod_free_camera = free_camera.load(), mod_flight = player_flight.load() >= 0;   // (the Cheats page may have set them)
+    mod_free_camera = free_camera.load();   // (the Cheats page may have set it)
     fill(dc, 0, 0, (int)w, (int)h, RGB(16, 20, 18));
     fill(dc, 0, 0, (int)w, 2 * s, RGB(96, 176, 112));
     SetBkMode(dc, TRANSPARENT);
@@ -1732,7 +1729,7 @@ void menu_set_gpu_count(int count) {
 
 bool menu_is_open() { return open_now.load(std::memory_order_relaxed); }
 int menu_heart_protection() { return protect_hearts.load(std::memory_order_relaxed); }
-int menu_player_flight() { return player_flight.load(std::memory_order_relaxed); }   // (-1 unless turned on: Cheats page or Cheats/Mods tab)
+int menu_player_flight() { return cheats_enabled ? player_flight.load(std::memory_order_relaxed) : -1; }
 int menu_free_camera() { return free_camera.load(std::memory_order_relaxed); }
 int menu_take_cheat_action() { return cheat_action.exchange(0, std::memory_order_relaxed); }
 
